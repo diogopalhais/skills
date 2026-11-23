@@ -1,13 +1,13 @@
 ---
 name: dp-review-pr
-description: Review one pull request in depth, check every claim against real command output, show me the findings, and after my OK post the GitHub review and mark the Slack review request with a checkmark. Use when I ask to review, re-review, or approve a specific PR.
+description: Review one pull request in depth, check every claim against real command output, show me the findings, and after my OK post the GitHub review. When the review is an approval, mark the Slack review request with a checkmark. Use when I ask to review, re-review, or approve a specific PR.
 argument-hint: <number | owner/repo#number | PR URL> [focus notes]
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/pr-context.sh:*), Bash(${CLAUDE_SKILL_DIR}/scripts/worktree.sh:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr checks:*), Bash(gh run view:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*)
 ---
 
 # Review a PR
 
-Input: `$ARGUMENTS`. The first word is the PR. A bare number resolves against the current directory's repo, then against `appliedblockchain/giano`. Any other words are focus notes from the user; give those areas extra attention.
+Input: `$ARGUMENTS`. The first word is the PR. A bare number resolves only against the repo of the current project folder. Any other words are focus notes from the user; give those areas extra attention.
 
 If no PR is given, ask for one and suggest `/dp-outstanding-prs` to find it.
 
@@ -37,7 +37,8 @@ The JSON contains the repo, the local clone path, PR metadata and body, files, C
 Then:
 - If `authoredByMe` is true, tell me that GitHub allows only a COMMENT on my own PR, and ask whether to continue.
 - If `pr.state` is not OPEN, or `pr.isDraft` is true, tell me and ask whether to continue.
-- If `localClone` is null, ask me for the path to a local clone. Do not clone into my folders without asking.
+- If the script fails because it cannot resolve the PR (the current folder is not a GitHub repo, or the PR is not in its repo), stop and ask me for the project folder or the full PR reference. Do not guess a repo.
+- If `localClone` is null, the current folder is not a clone of the PR's repo. Stop and ask me which folder to use. Do not search for the repo or clone it yourself.
 - Read the repo's own rules: `AGENTS.md`, `CLAUDE.md`, and `CONTRIBUTING.md` at the clone root, if they exist. Check the PR against them (for Giano: exact pinned versions, `--frozen-lockfile`, lockfile changes committed alone with their manifest change, Conventional Commits, an OpenSpec change for larger work).
 - Read linked issues or the ticket named in the PR body if they define what the PR must do.
 
@@ -98,7 +99,7 @@ Show this, then stop and wait for my answer:
 3. **Checks run:** each command with pass or fail. List any skipped checks with the reason.
 4. **Re-review status** (re-reviews only): each earlier thread, addressed or not addressed.
 5. **Draft review:** the review body and each inline comment, exactly as they will be posted.
-6. **Slack:** the review-request messages found (see step 8), with links, and that each one will get a ✅. If none are found, say so.
+6. **Slack:** the review-request messages found (see step 8), with links. Say that each one gets a ✅ only if the review is posted as APPROVE. If none are found, say so.
 
 I may edit, drop, or change the level of findings. Apply my changes and show only what changed. Post only after I confirm.
 
@@ -138,7 +139,9 @@ Find the messages that ask for a review of this PR:
 - A message that only mentions the PR in a list of updates does not count, unless it asks for review of this PR.
 - Mark the message that links this PR. When the request is a reply in a thread, mark that reply, not the thread's first message, because the first message covers several PRs.
 
-After the GitHub review is posted, whatever the verdict, add the reaction to each request message:
+The ✅ means approved. Add it only when the review read back in step 7 has the state APPROVED. For COMMENTED or CHANGES_REQUESTED, add no reaction and say so in the final report.
+
+When the review is approved, add the reaction to each request message:
 
 ```
 slack_add_reaction(channel_id, message_ts, emoji: "white_check_mark")
@@ -155,5 +158,5 @@ ${CLAUDE_SKILL_DIR}/scripts/worktree.sh remove <localClone> <number>
 Final message:
 - The answer: what was posted, for example "Posted APPROVE on giano#340 with 2 inline comments."
 - A link to the review.
-- The Slack messages marked with ✅.
+- The Slack messages marked with ✅, or why none were marked (no request found, or the review was not an approval).
 - Anything skipped or left open.

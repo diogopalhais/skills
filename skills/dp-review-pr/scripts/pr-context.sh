@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Collects everything needed to review one PR, as JSON.
 # Usage: pr-context.sh <number | owner/repo#number | PR URL>
-# A bare number resolves against the current directory's GitHub repo first,
-# then against $DP_REVIEW_DEFAULT_REPO (default: appliedblockchain/giano).
+# A bare number resolves only against the current directory's GitHub repo.
+# The local clone is the current directory's repo; there is no search elsewhere.
 set -euo pipefail
 
 REF="${1:?usage: pr-context.sh <number | owner/repo#number | PR URL>}"
-DEFAULT_REPO="${DP_REVIEW_DEFAULT_REPO:-appliedblockchain/giano}"
 ME=$(gh api user --jq .login)
 
 # --- Resolve repo and number ---------------------------------------------------
@@ -17,27 +16,23 @@ elif [[ "$REF" =~ ^([^/#[:space:]]+/[^/#[:space:]]+)#([0-9]+)$ ]]; then
   REPO="${BASH_REMATCH[1]}" NUM="${BASH_REMATCH[2]}"
 elif [[ "$REF" =~ ^#?([0-9]+)$ ]]; then
   NUM="${BASH_REMATCH[1]}"
-  CWD_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)
-  for candidate in "$CWD_REPO" "$DEFAULT_REPO"; do
-    [[ -z "$candidate" ]] && continue
-    if gh pr view "$NUM" -R "$candidate" --json number >/dev/null 2>&1; then REPO="$candidate"; break; fi
-  done
+  REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)
+  if [[ -z "$REPO" ]]; then
+    echo "error: the current folder ($PWD) is not a GitHub repo, so PR #$NUM has no repo" >&2; exit 2
+  fi
+  if ! gh pr view "$NUM" -R "$REPO" --json number >/dev/null 2>&1; then
+    echo "error: PR #$NUM not found in $REPO (the repo of the current folder)" >&2; exit 2
+  fi
 else
   echo "error: cannot read PR reference '$REF'" >&2; exit 2
 fi
-[[ -z "$REPO" ]] && { echo "error: PR #$NUM not found in the current repo or $DEFAULT_REPO" >&2; exit 2; }
 OWNER="${REPO%%/*}" NAME="${REPO##*/}"
 
-# --- Find a local clone --------------------------------------------------------
+# --- Local clone: the current folder, only if it is this repo -------------------
 CLONE=""
 matches_repo() { git -C "$1" remote get-url origin 2>/dev/null | grep -qiE "github\.com[:/]${OWNER}/${NAME}(\.git)?$"; }
 if top=$(git rev-parse --show-toplevel 2>/dev/null) && matches_repo "$top"; then
   CLONE="$top"
-else
-  while IFS= read -r gitdir; do
-    d="${gitdir%/.git}"
-    if matches_repo "$d"; then CLONE="$d"; break; fi
-  done < <(find "$HOME/work" "$HOME/projects" "$HOME/code" "$HOME/dev" -maxdepth 3 -name .git -type d 2>/dev/null)
 fi
 
 # --- PR data -------------------------------------------------------------------
