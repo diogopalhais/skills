@@ -3,7 +3,8 @@
 // 16 pixel sizes in light and dark browser tabs, and the palette with contrast ratios.
 //
 //   node board.mjs <out.png> <direction-a.json> [direction-b.json ...]
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { contrastReport, loadFont, loadMark, nest, png, resolveConfig, svgDoc, textPath } from './lib.mjs';
 
@@ -95,7 +96,8 @@ export function board(configs) {
   return { svg: svgDoc(w, h, body), width: w };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare real paths, because the skill usually runs through a symlink in ~/.claude/skills.
+if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
   const [out, ...files] = process.argv.slice(2);
   if (!out || files.length === 0) {
     console.error('usage: node board.mjs <out.png> <direction.json> [...]');
